@@ -25,6 +25,9 @@ def compute_daily_aggregates(events: list[dict]) -> list[dict]:
     """
     Given a list of parsed event dicts, return daily aggregate rows.
 
+    Uses the pre-computed mag_bucket field if present, otherwise falls
+    back to deriving it from magnitude.
+
     Each row: {"date": "YYYY-MM-DD", "mag_bucket": str, "count": int}
     """
     counts: dict[tuple[str, str], int] = defaultdict(int)
@@ -33,7 +36,7 @@ def compute_daily_aggregates(events: list[dict]) -> list[dict]:
         date = event.get("date")
         if not date:
             continue
-        bucket = magnitude_bucket(event.get("magnitude"))
+        bucket = event.get("mag_bucket") or magnitude_bucket(event.get("magnitude"))
         counts[(date, bucket)] += 1
 
     return [

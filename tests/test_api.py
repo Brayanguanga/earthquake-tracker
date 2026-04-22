@@ -133,6 +133,7 @@ class TestParseEvent:
         assert event is not None
         assert event["id"] == "us7000abc1"
         assert event["magnitude"] == 3.5
+        assert event["time_ms"] == 1713571200000
         assert event["date"] == "2024-04-20"
         assert event["longitude"] == -118.25
         assert event["latitude"] == 34.05

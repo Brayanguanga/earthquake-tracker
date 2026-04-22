@@ -6,7 +6,7 @@ SAMPLE_FEATURE = {
     "properties": {
         "mag": 3.5,
         "place": "10km NE of Somewhere, CA",
-        "time": 1713571200000,  # 2024-04-20 00:00:00 UTC
+        "time": 1713571200000,  # 2024-04-20 00:00:00 UTC (epoch ms)
         "status": "reviewed",
         "type": "earthquake",
         "url": "https://earthquake.usgs.gov/earthquakes/eventpage/us7000abc1",

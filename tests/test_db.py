@@ -3,8 +3,10 @@
 import pytest
 
 from earthquake_tracker.db import (
+    add_run_history,
     get_aggregates,
     get_events_for_date,
+    get_run_history,
     init_db,
     upsert_aggregates,
     upsert_events,
@@ -15,9 +17,10 @@ DB = ":memory:"  # never touches disk
 EVENTS = [
     {
         "id": "ev1",
-        "time": "2024-04-20T00:00:00+00:00",
+        "time_ms": 1713571200000,
         "date": "2024-04-20",
         "magnitude": 3.5,
+        "mag_bucket": "2-4",
         "place": "Somewhere, CA",
         "longitude": -118.25,
         "latitude": 34.05,
@@ -28,9 +31,10 @@ EVENTS = [
     },
     {
         "id": "ev2",
-        "time": "2024-04-20T12:00:00+00:00",
+        "time_ms": 1713614400000,
         "date": "2024-04-20",
         "magnitude": 1.2,
+        "mag_bucket": "0-2",
         "place": "Elsewhere, NV",
         "longitude": -115.0,
         "latitude": 36.0,
@@ -56,7 +60,6 @@ def db(tmp_path):
 
 class TestInitDb:
     def test_creates_tables(self, db):
-        # If init didn't raise, tables exist; verify by querying
         from earthquake_tracker.db import get_connection
         with get_connection(db) as conn:
             tables = {
@@ -67,6 +70,8 @@ class TestInitDb:
             }
         assert "events" in tables
         assert "daily_aggregates" in tables
+        assert "run_state" in tables
+        assert "run_history" in tables
 
     def test_idempotent(self, db):
         init_db(db)  # second call must not raise
@@ -83,12 +88,13 @@ class TestUpsertEvents:
 
     def test_replaces_on_conflict(self, db):
         upsert_events(EVENTS, db)
-        updated = [{**EVENTS[0], "magnitude": 4.0}]
+        updated = [{**EVENTS[0], "magnitude": 4.0, "mag_bucket": "4-6"}]
         upsert_events(updated, db)
 
         rows = get_events_for_date("2024-04-20", db)
         ev1 = next(r for r in rows if r["id"] == "ev1")
         assert ev1["magnitude"] == 4.0
+        assert ev1["mag_bucket"] == "4-6"
 
     def test_empty_list_is_noop(self, db):
         assert upsert_events([], db) == 0
@@ -118,6 +124,40 @@ class TestUpsertAggregates:
         assert upsert_aggregates([], db) == 0
 
 
+RUN_RECORD = {
+    "started_at": "2024-04-20T00:00:00+00:00",
+    "ended_at": "2024-04-20T00:05:00+00:00",
+    "events_fetched": 100,
+    "events_skipped": 2,
+    "aggregate_rows": 10,
+    "status": "success",
+}
+
+
+class TestRunHistory:
+    def test_empty_when_no_runs(self, db):
+        assert get_run_history(db) == []
+
+    def test_records_run(self, db):
+        add_run_history(RUN_RECORD, db)
+        rows = get_run_history(db)
+        assert len(rows) == 1
+        assert rows[0]["status"] == "success"
+        assert rows[0]["events_fetched"] == 100
+
+    def test_returns_newest_first(self, db):
+        add_run_history({**RUN_RECORD, "events_fetched": 1}, db)
+        add_run_history({**RUN_RECORD, "events_fetched": 2}, db)
+        rows = get_run_history(db)
+        assert rows[0]["events_fetched"] == 2
+
+    def test_limit_respected(self, db):
+        for _ in range(5):
+            add_run_history(RUN_RECORD, db)
+        rows = get_run_history(db, limit=3)
+        assert len(rows) == 3
+
+
 class TestCheckpoint:
     def test_returns_none_when_no_checkpoint(self, db):
         from earthquake_tracker.db import get_checkpoint
@@ -138,7 +178,7 @@ class TestCheckpoint:
 class TestGetEventsForDate:
     def test_returns_only_matching_date(self, db):
         extra = [{**EVENTS[0], "id": "ev3", "date": "2024-04-19",
-                  "time": "2024-04-19T00:00:00+00:00"}]
+                  "time_ms": 1713484800000}]
         upsert_events(EVENTS + extra, db)
 
         rows = get_events_for_date("2024-04-19", db)

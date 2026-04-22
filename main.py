@@ -7,7 +7,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from earthquake_tracker.pipeline import run, status, report
+from earthquake_tracker.pipeline import run, status, report, history
 
 
 def setup_logging(level: str) -> None:
@@ -39,6 +39,8 @@ def parse_args() -> argparse.Namespace:
                         help="Show last run checkpoint and staleness, then exit")
     parser.add_argument("--report", action="store_true",
                         help="Print daily aggregate table, then exit")
+    parser.add_argument("--history", action="store_true",
+                        help="Print recent run history, then exit")
     return parser.parse_args()
 
 
@@ -77,6 +79,17 @@ def main() -> None:
     if args.report:
         rows = report(db_path=args.db)
         print_report(rows)
+        return
+
+    if args.history:
+        rows = history(db_path=args.db)
+        if not rows:
+            print("No run history yet.")
+            return
+        print(f"\n{'#':<5} {'Started':<28} {'Ended':<28} {'Fetched':>8} {'Skipped':>8} {'Status'}")
+        print("-" * 90)
+        for r in rows:
+            print(f"{r['id']:<5} {r['started_at']:<28} {r['ended_at']:<28} {r['events_fetched']:>8} {r['events_skipped']:>8} {r['status']}")
         return
 
     logger.info("Starting earthquake tracker")

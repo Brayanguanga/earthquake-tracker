@@ -130,12 +130,12 @@ def parse_event(feature: dict) -> dict | None:
             logger.warning("Event %s missing time — skipping", feature.get("id"))
             return None
 
-        event_time = datetime.fromtimestamp(time_ms / 1000, tz=timezone.utc)
+        event_date = datetime.fromtimestamp(time_ms / 1000, tz=timezone.utc).date()
 
         return {
             "id": feature["id"],
-            "time": event_time.isoformat(),
-            "date": event_time.date().isoformat(),
+            "time_ms": time_ms,
+            "date": event_date.isoformat(),
             "magnitude": mag,
             "place": props.get("place"),
             "longitude": coords[0],

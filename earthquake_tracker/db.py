@@ -12,9 +12,10 @@ logger = logging.getLogger(__name__)
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
     id          TEXT PRIMARY KEY,
-    time        TEXT NOT NULL,
+    time_ms     INTEGER NOT NULL,
     date        TEXT NOT NULL,
     magnitude   REAL,
+    mag_bucket  TEXT NOT NULL,
     place       TEXT,
     longitude   REAL,
     latitude    REAL,
@@ -36,8 +37,19 @@ CREATE TABLE IF NOT EXISTS run_state (
     value TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_events_date ON events(date);
-CREATE INDEX IF NOT EXISTS idx_events_mag  ON events(magnitude);
+CREATE TABLE IF NOT EXISTS run_history (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    started_at      TEXT NOT NULL,
+    ended_at        TEXT NOT NULL,
+    events_fetched  INTEGER NOT NULL,
+    events_skipped  INTEGER NOT NULL,
+    aggregate_rows  INTEGER NOT NULL,
+    status          TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_date        ON events(date);
+CREATE INDEX IF NOT EXISTS idx_events_mag         ON events(magnitude);
+CREATE INDEX IF NOT EXISTS idx_events_date_bucket ON events(date, mag_bucket);
 """
 
 
@@ -57,9 +69,40 @@ def get_connection(db_path: str | Path):
         conn.close()
 
 
+def _migrate(conn) -> None:
+    """Apply incremental schema changes to existing databases. No-op on fresh DBs."""
+    tables = {row[0] for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    ).fetchall()}
+    if "events" not in tables:
+        return  # fresh database — schema creation handles everything
+
+    def columns():
+        return {row[1] for row in conn.execute("PRAGMA table_info(events)").fetchall()}
+
+    # v2: rename time (ISO text) → time_ms (epoch integer)
+    existing = columns()
+    if "time" in existing and "time_ms" not in existing:
+        logger.info("Migration: renaming time → time_ms in events")
+        conn.execute("ALTER TABLE events RENAME COLUMN time TO time_ms")
+        conn.execute("""
+            UPDATE events
+            SET time_ms = CAST(
+                (julianday(time_ms) - julianday('1970-01-01')) * 86400000 AS INTEGER
+            )
+        """)
+        logger.info("Migration: converted time ISO strings to epoch ms")
+
+    # v2: add mag_bucket column (re-read columns in case rename just ran)
+    if "mag_bucket" not in columns():
+        logger.info("Migration: adding mag_bucket column to events")
+        conn.execute("ALTER TABLE events ADD COLUMN mag_bucket TEXT NOT NULL DEFAULT 'unknown'")
+
+
 def init_db(db_path: str | Path) -> None:
     logger.info("Initialising database at %s", db_path)
     with get_connection(db_path) as conn:
+        _migrate(conn)
         conn.executescript(SCHEMA)
 
 
@@ -70,10 +113,10 @@ def upsert_events(events: list[dict], db_path: str | Path) -> int:
 
     sql = """
         INSERT OR REPLACE INTO events
-            (id, time, date, magnitude, place, longitude, latitude,
+            (id, time_ms, date, magnitude, mag_bucket, place, longitude, latitude,
              depth_km, event_type, status, url)
         VALUES
-            (:id, :time, :date, :magnitude, :place, :longitude, :latitude,
+            (:id, :time_ms, :date, :magnitude, :mag_bucket, :place, :longitude, :latitude,
              :depth_km, :event_type, :status, :url)
     """
     with get_connection(db_path) as conn:
@@ -99,10 +142,32 @@ def upsert_aggregates(aggregates: list[dict], db_path: str | Path) -> int:
     return len(aggregates)
 
 
+def add_run_history(record: dict, db_path: str | Path) -> None:
+    """Append a run record to the history table."""
+    sql = """
+        INSERT INTO run_history
+            (started_at, ended_at, events_fetched, events_skipped, aggregate_rows, status)
+        VALUES
+            (:started_at, :ended_at, :events_fetched, :events_skipped, :aggregate_rows, :status)
+    """
+    with get_connection(db_path) as conn:
+        conn.execute(sql, record)
+    logger.info("Run history recorded: %s", record["status"])
+
+
+def get_run_history(db_path: str | Path, limit: int = 20) -> list[dict]:
+    """Return the most recent run records, newest first."""
+    with get_connection(db_path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM run_history ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def get_events_for_date(date_str: str, db_path: str | Path) -> list[dict]:
     with get_connection(db_path) as conn:
         rows = conn.execute(
-            "SELECT * FROM events WHERE date = ? ORDER BY time", (date_str,)
+            "SELECT * FROM events WHERE date = ? ORDER BY time_ms", (date_str,)
         ).fetchall()
     return [dict(r) for r in rows]
 
