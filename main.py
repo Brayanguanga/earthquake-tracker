@@ -1,5 +1,18 @@
 #!/usr/bin/env python3
-"""Entry point — configure logging then run the pipeline."""
+"""
+CLI entry point for the earthquake tracker.
+
+Commands:
+    python main.py                        fetch new events (incremental)
+    python main.py --start DATE           fetch from a specific date
+    python main.py --end DATE             fetch up to a specific date
+    python main.py --min-magnitude FLOAT  filter by minimum magnitude
+    python main.py --db PATH              use a custom SQLite file
+    python main.py --report               print daily aggregate table
+    python main.py --status               show checkpoint age / staleness
+    python main.py --history              show recent run log
+    python main.py --log-level DEBUG      verbose output for debugging
+"""
 
 import argparse
 import logging

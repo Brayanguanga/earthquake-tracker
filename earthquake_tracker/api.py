@@ -1,4 +1,15 @@
-"""USGS Earthquake API client with pagination support."""
+"""
+USGS Earthquake API client.
+
+Public interface:
+    fetch_events(start, end, session, min_magnitude) -> Iterator[dict]
+        Yields raw GeoJSON feature dicts, handling pagination automatically.
+    parse_event(feature) -> dict | None
+        Flattens one GeoJSON feature to a plain dict ready for DB insertion.
+        Returns None for malformed or incomplete features.
+    count_events(start, end, session, min_magnitude) -> int
+        Cheap /count call — used internally by fetch_events.
+"""
 
 from __future__ import annotations
 

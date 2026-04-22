@@ -1,4 +1,15 @@
-"""Transform raw earthquake events into daily magnitude-bucket aggregates."""
+"""
+Transform parsed earthquake events into daily magnitude-bucket aggregates.
+
+Magnitude buckets: 0-2 | 2-4 | 4-6 | 6+ | unknown (null magnitude)
+
+Public interface:
+    magnitude_bucket(mag) -> str
+        Returns the bucket label for a single magnitude value.
+    compute_daily_aggregates(events) -> list[dict]
+        Groups events by (date, mag_bucket) and returns count rows.
+        Uses the pre-computed mag_bucket field if present on each event.
+"""
 
 from __future__ import annotations
 

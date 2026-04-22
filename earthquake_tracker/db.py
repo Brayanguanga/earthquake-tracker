@@ -1,4 +1,15 @@
-"""SQLite persistence layer."""
+"""
+SQLite persistence layer.
+
+Schema (4 tables):
+    events           — raw earthquake events, one row per USGS event ID
+    daily_aggregates — pre-computed daily counts per magnitude bucket
+    run_state        — key/value store; holds the incremental fetch checkpoint
+    run_history      — append-only log of every pipeline run
+
+All writes use INSERT OR REPLACE so reruns over the same window are idempotent.
+Schema migrations are applied automatically on init_db() for existing databases.
+"""
 
 from __future__ import annotations
 

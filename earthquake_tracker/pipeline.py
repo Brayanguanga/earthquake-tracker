@@ -1,4 +1,17 @@
-"""Orchestrates fetch → parse → store → aggregate pipeline."""
+"""
+Pipeline orchestration — wires the API, DB, and transform layers together.
+
+Public interface:
+    run(start, end, db_path, min_magnitude) -> dict
+        Full pipeline: fetch → enrich → batch-write → aggregate → checkpoint.
+        Resumes from the last checkpoint if start is not provided.
+    status(db_path, stale_hours) -> dict
+        Reports checkpoint age and whether the pipeline is stale.
+    report(db_path) -> list[dict]
+        Returns all daily aggregate rows for display.
+    history(db_path, limit) -> list[dict]
+        Returns recent run history records, newest first.
+"""
 
 from __future__ import annotations
 
