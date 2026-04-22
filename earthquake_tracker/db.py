@@ -31,6 +31,11 @@ CREATE TABLE IF NOT EXISTS daily_aggregates (
     PRIMARY KEY (date, mag_bucket)
 );
 
+CREATE TABLE IF NOT EXISTS run_state (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_events_date ON events(date);
 CREATE INDEX IF NOT EXISTS idx_events_mag  ON events(magnitude);
 """
@@ -108,3 +113,22 @@ def get_aggregates(db_path: str | Path) -> list[dict]:
             "SELECT * FROM daily_aggregates ORDER BY date, mag_bucket"
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def get_checkpoint(db_path: str | Path) -> str | None:
+    """Return the ISO timestamp of the last successfully fetched event, or None."""
+    with get_connection(db_path) as conn:
+        row = conn.execute(
+            "SELECT value FROM run_state WHERE key = 'last_fetched_time'"
+        ).fetchone()
+    return row["value"] if row else None
+
+
+def set_checkpoint(timestamp: str, db_path: str | Path) -> None:
+    """Persist the latest event timestamp after a successful run."""
+    with get_connection(db_path) as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO run_state (key, value) VALUES ('last_fetched_time', ?)",
+            (timestamp,),
+        )
+    logger.info("Checkpoint saved: %s", timestamp)

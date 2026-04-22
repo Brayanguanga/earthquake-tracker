@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from datetime import date, datetime, timezone
-from typing import Iterator, Optional
+from typing import Iterator, Union
 
 import requests
 
@@ -44,23 +44,28 @@ def _get(url: str, params: dict, session: requests.Session) -> dict:
     raise RuntimeError(f"All {MAX_RETRIES} attempts failed for {url}")
 
 
-def count_events(start: date, end: date, session: requests.Session | None = None) -> int:
+def count_events(
+    start: Union[date, datetime],
+    end: Union[date, datetime],
+    session: requests.Session | None = None,
+    min_magnitude: float | None = None,
+) -> int:
     """Return total event count for the time window (cheap HEAD-style call)."""
     session = session or requests.Session()
-    data = _get(
-        f"{BASE_URL}/count",
-        {"format": "geojson", "starttime": start.isoformat(), "endtime": end.isoformat()},
-        session,
-    )
+    params: dict = {"format": "geojson", "starttime": start.isoformat(), "endtime": end.isoformat()}
+    if min_magnitude is not None:
+        params["minmagnitude"] = min_magnitude
+    data = _get(f"{BASE_URL}/count", params, session)
     total = data.get("count", 0)
     logger.info("API reports %d events between %s and %s", total, start, end)
     return total
 
 
 def fetch_events(
-    start: date,
-    end: date,
+    start: Union[date, datetime],
+    end: Union[date, datetime],
     session: requests.Session | None = None,
+    min_magnitude: float | None = None,
 ) -> Iterator[dict]:
     """
     Yield individual earthquake feature dicts for the given window.
@@ -69,7 +74,7 @@ def fetch_events(
     Feature with at least: id, properties (mag, place, time), geometry.
     """
     session = session or requests.Session()
-    total = count_events(start, end, session)
+    total = count_events(start, end, session, min_magnitude=min_magnitude)
     if total == 0:
         logger.info("No events found — nothing to fetch")
         return
@@ -78,7 +83,7 @@ def fetch_events(
     offset = 1  # USGS uses 1-based offset
 
     while fetched < total:
-        params = {
+        params: dict = {
             "format": "geojson",
             "starttime": start.isoformat(),
             "endtime": end.isoformat(),
@@ -86,6 +91,8 @@ def fetch_events(
             "limit": PAGE_SIZE,
             "offset": offset,
         }
+        if min_magnitude is not None:
+            params["minmagnitude"] = min_magnitude
         logger.info(
             "Fetching page offset=%d limit=%d (fetched %d/%d)",
             offset, PAGE_SIZE, fetched, total,

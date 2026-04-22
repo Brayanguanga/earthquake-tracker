@@ -118,6 +118,23 @@ class TestUpsertAggregates:
         assert upsert_aggregates([], db) == 0
 
 
+class TestCheckpoint:
+    def test_returns_none_when_no_checkpoint(self, db):
+        from earthquake_tracker.db import get_checkpoint
+        assert get_checkpoint(db) is None
+
+    def test_saves_and_retrieves_checkpoint(self, db):
+        from earthquake_tracker.db import get_checkpoint, set_checkpoint
+        set_checkpoint("2024-04-20T12:00:00+00:00", db)
+        assert get_checkpoint(db) == "2024-04-20T12:00:00+00:00"
+
+    def test_overwrites_previous_checkpoint(self, db):
+        from earthquake_tracker.db import get_checkpoint, set_checkpoint
+        set_checkpoint("2024-04-19T00:00:00+00:00", db)
+        set_checkpoint("2024-04-20T12:00:00+00:00", db)
+        assert get_checkpoint(db) == "2024-04-20T12:00:00+00:00"
+
+
 class TestGetEventsForDate:
     def test_returns_only_matching_date(self, db):
         extra = [{**EVENTS[0], "id": "ev3", "date": "2024-04-19",

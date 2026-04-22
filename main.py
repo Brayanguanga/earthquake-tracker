@@ -7,7 +7,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from earthquake_tracker.pipeline import run
+from earthquake_tracker.pipeline import run, status, report
 
 
 def setup_logging(level: str) -> None:
@@ -17,11 +17,8 @@ def setup_logging(level: str) -> None:
         level=getattr(logging, level.upper(), logging.INFO),
         format=fmt,
         datefmt=datefmt,
-        handlers=[
-            logging.StreamHandler(sys.stdout),
-        ],
+        handlers=[logging.StreamHandler(sys.stdout)],
     )
-    # Quiet noisy third-party loggers
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("requests").setLevel(logging.WARNING)
 
@@ -29,25 +26,67 @@ def setup_logging(level: str) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Fetch and store USGS earthquake data.")
     parser.add_argument("--start", type=date.fromisoformat, default=None,
-                        help="Start date YYYY-MM-DD (default: 30 days ago)")
+                        help="Start date YYYY-MM-DD (default: 30 days ago or last checkpoint)")
     parser.add_argument("--end", type=date.fromisoformat, default=None,
                         help="End date YYYY-MM-DD (default: today)")
     parser.add_argument("--db", type=Path, default=Path("earthquakes.db"),
                         help="SQLite database path (default: earthquakes.db)")
+    parser.add_argument("--min-magnitude", type=float, default=None,
+                        help="Only fetch events at or above this magnitude")
     parser.add_argument("--log-level", default="INFO",
                         choices=["DEBUG", "INFO", "WARNING", "ERROR"])
+    parser.add_argument("--status", action="store_true",
+                        help="Show last run checkpoint and staleness, then exit")
+    parser.add_argument("--report", action="store_true",
+                        help="Print daily aggregate table, then exit")
     return parser.parse_args()
+
+
+def print_report(rows: list[dict]) -> None:
+    if not rows:
+        print("No aggregates found. Run the pipeline first.")
+        return
+
+    # Group by date for a readable table
+    from collections import defaultdict
+    by_date: dict = defaultdict(dict)
+    for row in rows:
+        by_date[row["date"]][row["mag_bucket"]] = row["count"]
+
+    buckets = ["0-2", "2-4", "4-6", "6+", "unknown"]
+    header = f"{'Date':<12}" + "".join(f"{b:>10}" for b in buckets) + f"{'Total':>10}"
+    print(header)
+    print("-" * len(header))
+    for day, counts in sorted(by_date.items()):
+        total = sum(counts.values())
+        row_str = f"{day:<12}" + "".join(f"{counts.get(b, 0):>10}" for b in buckets) + f"{total:>10}"
+        print(row_str)
 
 
 def main() -> None:
     args = parse_args()
     setup_logging(args.log_level)
-
     logger = logging.getLogger(__name__)
-    logger.info("Starting earthquake tracker")
 
+    if args.status:
+        result = status(db_path=args.db)
+        for key, val in result.items():
+            print(f"  {key}: {val}")
+        sys.exit(1 if result.get("stale") else 0)
+
+    if args.report:
+        rows = report(db_path=args.db)
+        print_report(rows)
+        return
+
+    logger.info("Starting earthquake tracker")
     try:
-        summary = run(start=args.start, end=args.end, db_path=args.db)
+        summary = run(
+            start=args.start,
+            end=args.end,
+            db_path=args.db,
+            min_magnitude=args.min_magnitude,
+        )
         print("\nSummary:")
         for key, val in summary.items():
             print(f"  {key}: {val}")
