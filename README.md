@@ -200,7 +200,5 @@ Indexes: `events(date)`, `events(magnitude)`, `events(date, mag_bucket)`
 
 ## What I'd Add With More Time
 
-- `--dry-run` flag: fetch and parse without writing to the DB — safe for testing against the live API
-- Prometheus metrics: events fetched per run, DB write latency, hours since last successful run
-- Docker + cron setup for containerised deployment with automatic restarts
-- Timezone-aware date bucketing: events near midnight UTC currently land on the UTC date, which may differ from the local date in the affected region
+- **Prometheus metrics** — events fetched per run, DB write latency, and hours since last successful run. The `run_history` table already captures the raw data; exposing it as metrics would make the pipeline observable without reading log files.
+- **Timezone-aware date bucketing** — events near midnight UTC currently land on the UTC date, which may differ from the local date in the affected region. Bucketing by the event's local timezone would be more meaningful for regional analysis.
